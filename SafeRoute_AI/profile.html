@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SafeRoute AI — Your Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --teal:#00C9A7;--teal-dim:#009e84;
+    --danger:#FF1744;--safe:#00E676;
+    --bg:#0D1117;--surface:#161B22;--card:#1E2730;
+    --border:#2A3340;--text:#E6EDF3;--muted:#6E7681;
+  }
+
+  html,body{
+    min-height:100vh;background:var(--bg);
+    font-family:'DM Sans',sans-serif;color:var(--text);
+  }
+
+  /* ── BACKGROUND GRID ── */
+  body::before{
+    content:'';position:fixed;inset:0;
+    background-image:
+      linear-gradient(rgba(0,201,167,0.03) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,201,167,0.03) 1px,transparent 1px);
+    background-size:40px 40px;
+    pointer-events:none;z-index:0;
+  }
+
+  /* ── TOP BAR ── */
+  #topbar{
+    position:sticky;top:0;height:56px;
+    background:rgba(13,17,23,0.92);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    display:flex;align-items:center;padding:0 24px;gap:16px;z-index:100;
+  }
+  .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;letter-spacing:-0.5px;color:var(--teal)}
+  .logo span{color:var(--text)}
+  .step-badge{
+    margin-left:auto;font-size:12px;color:var(--muted);
+    font-family:'Syne',sans-serif;font-weight:600;letter-spacing:1px;text-transform:uppercase;
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .page{
+    position:relative;z-index:1;
+    max-width:560px;margin:0 auto;padding:40px 24px 80px;
+  }
+
+  /* ── HERO ── */
+  .hero{margin-bottom:36px;text-align:center}
+  .hero-icon{
+    width:72px;height:72px;border-radius:50%;
+    background:linear-gradient(135deg,rgba(0,201,167,0.2),rgba(0,201,167,0.05));
+    border:1px solid rgba(0,201,167,0.3);
+    display:flex;align-items:center;justify-content:center;
+    font-size:32px;margin:0 auto 20px;
+    box-shadow:0 0 40px rgba(0,201,167,0.15);
+  }
+  .hero h1{
+    font-family:'Syne',sans-serif;font-weight:800;font-size:26px;
+    letter-spacing:-0.5px;margin-bottom:8px;
+  }
+  .hero p{font-size:14px;color:var(--muted);line-height:1.6;max-width:380px;margin:0 auto}
+
+  /* ── PROGRESS BAR ── */
+  .progress{
+    display:flex;gap:8px;margin-bottom:32px;align-items:center;justify-content:center;
+  }
+  .prog-step{
+    display:flex;align-items:center;gap:6px;
+    font-size:11px;font-family:'Syne',sans-serif;font-weight:700;
+    letter-spacing:0.5px;color:var(--muted);text-transform:uppercase;
+  }
+  .prog-dot{
+    width:24px;height:24px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:700;
+    border:1.5px solid var(--border);color:var(--muted);
+  }
+  .prog-step.done .prog-dot{background:var(--teal);border-color:var(--teal);color:#0D1117}
+  .prog-step.active .prog-dot{border-color:var(--teal);color:var(--teal)}
+  .prog-step.active{color:var(--text)}
+  .prog-line{flex:1;height:1px;background:var(--border);max-width:40px}
+  .prog-line.done{background:var(--teal)}
+
+  /* ── CARD ── */
+  .form-card{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:14px;overflow:hidden;margin-bottom:16px;
+  }
+  .card-header{
+    padding:16px 20px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:10px;
+  }
+  .card-icon{font-size:18px}
+  .card-title{
+    font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
+    letter-spacing:0.5px;color:var(--text);
+  }
+  .card-sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .card-body{padding:20px}
+
+  /* ── FORM FIELDS ── */
+  .field{margin-bottom:18px}
+  .field:last-child{margin-bottom:0}
+  .field label{
+    display:block;font-size:11px;font-family:'Syne',sans-serif;
+    font-weight:700;letter-spacing:1px;text-transform:uppercase;
+    color:var(--muted);margin-bottom:8px;
+  }
+  .field-wrap{position:relative}
+  .field-wrap .f-icon{
+    position:absolute;left:14px;top:50%;transform:translateY(-50%);
+    font-size:15px;pointer-events:none;
+  }
+  .field input{
+    width:100%;background:var(--card);border:1px solid var(--border);
+    border-radius:8px;padding:12px 14px 12px 42px;
+    color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;
+    outline:none;transition:border-color .2s,box-shadow .2s;
+  }
+  .field input:focus{
+    border-color:var(--teal);
+    box-shadow:0 0 0 3px rgba(0,201,167,0.1);
+  }
+  .field input::placeholder{color:var(--muted)}
+  .field input.error{border-color:var(--danger)}
+
+  /* phone prefix row */
+  .phone-row{display:flex;gap:10px}
+  .phone-prefix{
+    padding:12px 14px;background:var(--card);border:1px solid var(--border);
+    border-radius:8px;font-size:14px;color:var(--muted);white-space:nowrap;
+    display:flex;align-items:center;gap:6px;flex-shrink:0;
+  }
+  .phone-row .field-wrap{flex:1}
+  .phone-row .field-wrap input{padding-left:14px}
+
+  /* helper text */
+  .field-hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4}
+  .field-hint.err{color:var(--danger)}
+
+  /* ── EMERGENCY CARD HIGHLIGHT ── */
+  .form-card.emergency{border-color:rgba(255,23,68,0.25)}
+  .form-card.emergency .card-header{background:rgba(255,23,68,0.06)}
+
+  /* ── SAVE BUTTON ── */
+  #save-btn{
+    width:100%;padding:16px;background:var(--teal);border:none;border-radius:10px;
+    color:#0D1117;font-family:'Syne',sans-serif;font-weight:800;font-size:15px;
+    cursor:pointer;transition:background .15s,transform .1s,box-shadow .2s;
+    letter-spacing:0.5px;margin-top:8px;
+    box-shadow:0 4px 24px rgba(0,201,167,0.25);
+    display:flex;align-items:center;justify-content:center;gap:10px;
+  }
+  #save-btn:hover{background:var(--teal-dim);box-shadow:0 4px 32px rgba(0,201,167,0.4)}
+  #save-btn:active{transform:scale(0.98)}
+  #save-btn:disabled{background:#2A3340;color:var(--muted);cursor:not-allowed;box-shadow:none}
+
+  /* ── STATUS MESSAGE ── */
+  #msg{
+    margin-top:14px;padding:12px 16px;border-radius:8px;
+    font-size:13px;display:none;line-height:1.4;text-align:center;
+  }
+  #msg.success{background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);color:var(--safe)}
+  #msg.error{background:rgba(255,23,68,0.1);border:1px solid rgba(255,23,68,0.3);color:var(--danger)}
+
+  /* ── SKIP LINK ── */
+  .skip-link{
+    display:block;text-align:center;margin-top:16px;
+    font-size:12px;color:var(--muted);text-decoration:none;
+    transition:color .15s;
+  }
+  .skip-link:hover{color:var(--text)}
+
+  /* ── AUTH GUARD overlay ── */
+  #auth-check{
+    position:fixed;inset:0;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Syne',sans-serif;font-size:14px;color:var(--muted);
+    z-index:9999;
+  }
+  .spinner{
+    width:28px;height:28px;border:2px solid var(--border);
+    border-top-color:var(--teal);border-radius:50%;
+    animation:spin .8s linear infinite;margin-right:12px;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- Auth guard: shown while we check session -->
+<div id="auth-check">
+  <div class="spinner"></div> Checking your session...
+</div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo">Safe<span>Route</span></div>
+  <div class="step-badge" id="user-email-bar">Profile Setup</div>
+</div>
+
+<!-- PAGE -->
+<div class="page">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-icon">🛡️</div>
+    <h1>Set Up Your Profile</h1>
+    <p>We need a few details to keep you safe. Your emergency contact will be alerted instantly if you trigger SOS.</p>
+  </div>
+
+  <!-- Progress indicator -->
+  <div class="progress">
+    <div class="prog-step done">
+      <div class="prog-dot">✓</div>
+      <span>Account</span>
+    </div>
+    <div class="prog-line done"></div>
+    <div class="prog-step active">
+      <div class="prog-dot">2</div>
+      <span>Profile</span>
+    </div>
+    <div class="prog-line"></div>
+    <div class="prog-step">
+      <div class="prog-dot">3</div>
+      <span>Navigate</span>
+    </div>
+  </div>
+
+  <!-- ── YOUR DETAILS ── -->
+  <div class="form-card">
+    <div class="card-header">
+      <div class="card-icon">👤</div>
+      <div>
+        <div class="card-title">Your Details</div>
+        <div class="card-sub">Used in alerts sent to your contact</div>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <div class="field">
+        <label>Full Name</label>
+        <div class="field-wrap">
+          <span class="f-icon">✏️</span>
+          <input type="text" id="full-name" placeholder="e.g. Priya Sharma" autocomplete="name"/>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Your Phone Number</label>
+        <div class="phone-row">
+          <div class="phone-prefix">🇮🇳 +91</div>
+          <div class="field-wrap">
+            <input type="tel" id="phone" placeholder="98765 43210" maxlength="10" autocomplete="tel"/>
+          </div>
+        </div>
+        <div class="field-hint">10-digit mobile number, no country code</div>
+      </div>
+
+      <div class="field">
+        <label>Medical Notes <span style="color:var(--muted);font-weight:400;letter-spacing:0">(optional)</span></label>
+        <div class="field-wrap">
+          <span class="f-icon">🩺</span>
+          <input type="text" id="medical-notes" placeholder="e.g. Allergic to penicillin, diabetic" autocomplete="off" style="padding-left:42px"/>
+        </div>
+        <div class="field-hint">Shared with emergency services if needed</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── EMERGENCY CONTACT ── -->
+  <div class="form-card emergency">
+    <div class="card-header">
+      <div class="card-icon">🚨</div>
+      <div>
+        <div class="card-title">Emergency Contact</div>
+        <div class="card-sub">They will receive an SMS with your live location during SOS</div>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <div class="field">
+        <label>Contact's Full Name</label>
+        <div class="field-wrap">
+          <span class="f-icon">👥</span>
+          <input type="text" id="emergency-name" placeholder="e.g. Ravi Sharma (Dad)" autocomplete="off"/>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Contact's Phone Number</label>
+        <div class="phone-row">
+          <div class="phone-prefix">🇮🇳 +91</div>
+          <div class="field-wrap">
+            <input type="tel" id="emergency-phone" placeholder="98765 43210" maxlength="10" autocomplete="off"/>
+          </div>
+        </div>
+        <div class="field-hint" id="emergency-phone-hint">
+          This number will receive the SOS SMS via Twilio
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Save button -->
+  <button id="save-btn" onclick="saveProfile()">
+    <span id="save-label">Save & Open SafeRoute →</span>
+  </button>
+
+  <!-- Status message -->
+  <div id="msg"></div>
+
+  <!-- Skip for now -->
+  <a class="skip-link" href="map.html">Skip for now (SOS will not work)</a>
+
+</div><!-- /page -->
+
+<script>
+// =============================================
+//  SUPABASE CONFIG  (same keys as your other files)
+// =============================================
+const S_URL = "https://nxxwmgifxbarwkpmhuyd.supabase.co";
+const S_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54eHdtZ2lmeGJhcndrcG1odXlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODA3NzcsImV4cCI6MjA5MDI1Njc3N30.-b9Yvcfjt1kCYObV6R5KGp8RLkWQrtZA27TFLQnFcCk";
+const sb = supabase.createClient(S_URL, S_KEY);
+
+let currentUser = null;
+
+// =============================================
+//  AUTH GUARD — redirect to login if not signed in
+// =============================================
+window.onload = async () => {
+  const { data: { user }, error } = await sb.auth.getUser();
+
+  // Hide the auth-check overlay
+  document.getElementById('auth-check').style.display = 'none';
+
+  if (!user) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  currentUser = user;
+  document.getElementById('user-email-bar').textContent = user.email;
+
+  // If they already have a profile, send them straight to the map
+  // (they should use the in-map drawer to edit, not this page again)
+  const { data: existing } = await sb
+    .from('profiles')
+    .select('full_name')
+    .eq('id', user.id)
+    .single();
+
+  if (existing && existing.full_name) {
+    window.location.href = 'map.html';
+    return;
+  }
+
+  // New user — let them fill in their details (leave form empty)
+};
+
+// =============================================
+//  LOAD EXISTING PROFILE (if returning user)
+// =============================================
+async function loadExistingProfile(userId) {
+  const { data, error } = await sb
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error || !data) return; // New user — nothing to pre-fill
+
+  // Pre-fill the form — column names match your Supabase profiles table exactly
+  if (data.full_name)                document.getElementById('full-name').value = data.full_name;
+  if (data.phone_number)                document.getElementById("phone").value = data.phone_number.replace("+91","");
+  if (data.emergency_contact_name)   document.getElementById('emergency-name').value = data.emergency_contact_name;
+  if (data.emergency_contact_number)    document.getElementById("emergency-phone").value = data.emergency_contact_number.replace("+91","");
+  if (data.medical_notes)               document.getElementById("medical-notes").value = data.medical_notes || "";
+}
+
+// =============================================
+//  VALIDATION HELPERS
+// =============================================
+function showError(id, hintId, msg) {
+  document.getElementById(id).classList.add('error');
+  if (hintId) {
+    const hint = document.getElementById(hintId);
+    hint.textContent = msg;
+    hint.classList.add('err');
+  }
+}
+
+function clearErrors() {
+  ['full-name','phone','emergency-name','emergency-phone'].forEach(id => {
+    document.getElementById(id).classList.remove('error');
+  });
+  const hint = document.getElementById('emergency-phone-hint');
+  hint.textContent = 'This number will receive the SOS SMS via Twilio';
+  hint.classList.remove('err');
+}
+
+function validate() {
+  clearErrors();
+  let valid = true;
+
+  const fullName = document.getElementById('full-name').value.trim();
+  const phone    = document.getElementById('phone').value.trim();
+  const eName    = document.getElementById('emergency-name').value.trim();
+  const ePhone   = document.getElementById('emergency-phone').value.trim();
+
+  if (!fullName) {
+    showError('full-name', null, '');
+    valid = false;
+  }
+  if (!/^\d{10}$/.test(phone)) {
+    showError('phone', null, '');
+    valid = false;
+  }
+  if (!eName) {
+    showError('emergency-name', null, '');
+    valid = false;
+  }
+  if (!/^\d{10}$/.test(ePhone)) {
+    showError('emergency-phone', 'emergency-phone-hint', '⚠️ Enter a valid 10-digit number');
+    valid = false;
+  }
+
+  return valid;
+}
+
+// =============================================
+//  SAVE PROFILE TO SUPABASE
+// =============================================
+async function saveProfile() {
+  if (!currentUser) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  if (!validate()) {
+    showMsg('Please fill in all fields correctly.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('save-btn');
+  const label = document.getElementById('save-label');
+  btn.disabled = true;
+  label.textContent = 'Saving...';
+
+  const profileData = {
+    id: currentUser.id,                            // links to auth.users primary key
+    full_name: document.getElementById('full-name').value.trim(),
+    phone_number: '+91' + document.getElementById('phone').value.trim(),           // ✅ your column name
+    emergency_contact_name: document.getElementById('emergency-name').value.trim(),
+    emergency_contact_phone: '+91' + document.getElementById('emergency-phone').value.trim(), // ✅ your column name
+    medical_notes: document.getElementById('medical-notes').value.trim() || null,  // ✅ your column name
+    // Note: created_at is set automatically by Supabase on first insert
+  };
+
+  // upsert = insert if new, update if exists
+  const { error } = await sb
+    .from('profiles')
+    .upsert(profileData, { onConflict: 'id' });
+
+  if (error) {
+    console.error('Supabase error:', error);
+    showMsg('❌ ' + error.message, 'error');
+    btn.disabled = false;
+    label.textContent = 'Save & Open SafeRoute →';
+    return;
+  }
+
+  showMsg('✅ Profile saved! Redirecting to SafeRoute...', 'success');
+  setTimeout(() => { window.location.href = 'map.html'; }, 1500);
+}
+
+function showMsg(text, type) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = type;
+  el.style.display = 'block';
+}
+</script>
+
+</body>
+</html>

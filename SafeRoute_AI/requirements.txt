@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+supabase
+osmnx
+networkx
+pandas
+python-dotenv

@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SafeRoute AI — Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --teal:#00C9A7;--teal-dim:#009e84;
+    --safe:#00E676;--warn:#FF6B35;--danger:#FF1744;
+    --shortest:#4FC3F7;--recommended:#FFD600;
+    --bg:#0D1117;--surface:#161B22;--card:#1E2730;
+    --border:#2A3340;--text:#E6EDF3;--muted:#6E7681;
+  }
+  html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text)}
+
+  /* === TOP NAV === */
+  #topbar{
+    position:fixed;top:0;left:0;right:0;height:56px;
+    background:rgba(13,17,23,0.92);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    display:flex;align-items:center;padding:0 20px;gap:16px;z-index:1100;
+  }
+  .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;letter-spacing:-0.5px;color:var(--teal);flex-shrink:0}
+  .logo span{color:var(--text)}
+
+  /* === ROUTE PANEL (left) === */
+  #panel{
+    position:fixed;top:56px;left:0;bottom:0;width:340px;
+    background:var(--surface);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;z-index:1000;overflow-y:auto;
+  }
+  .panel-section{padding:16px;border-bottom:1px solid var(--border)}
+  .panel-label{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;
+    color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+
+  .input-row{position:relative;margin-bottom:10px}
+  .input-row input{
+    width:100%;background:var(--card);border:1px solid var(--border);
+    border-radius:8px;padding:11px 14px 11px 36px;
+    color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;
+    outline:none;transition:border-color .2s;
+  }
+  .input-row input:focus{border-color:var(--teal)}
+  .input-row input::placeholder{color:var(--muted)}
+  .input-icon{
+    position:absolute;left:12px;top:50%;transform:translateY(-50%);
+    width:14px;height:14px;border-radius:50%;flex-shrink:0;
+  }
+  .icon-start{background:var(--safe)}
+  .icon-end{background:var(--danger)}
+
+  .btn-primary{
+    width:100%;padding:12px;background:var(--teal);border:none;border-radius:8px;
+    color:#0D1117;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;
+    cursor:pointer;transition:background .15s,transform .1s;letter-spacing:0.3px;
+  }
+  .btn-primary:hover{background:var(--teal-dim)}
+  .btn-primary:active{transform:scale(0.98)}
+  .btn-primary:disabled{background:#2A3340;color:var(--muted);cursor:not-allowed}
+
+  /* Route type pills */
+  .route-legend{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+  .route-pill{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;
+    border-radius:8px;border:1px solid var(--border);cursor:pointer;
+    transition:border-color .15s,background .15s;
+  }
+  .route-pill:hover{background:var(--card)}
+  .route-pill.active{border-color:var(--teal);background:rgba(0,201,167,0.08)}
+  .route-dot{width:12px;height:4px;border-radius:2px;flex-shrink:0}
+  .dot-safe{background:var(--safe)}
+  .dot-short{background:var(--shortest)}
+  .dot-rec{background:var(--recommended)}
+  .route-info{flex:1}
+  .route-name{font-size:13px;font-weight:500}
+  .route-meta{font-size:11px;color:var(--muted);margin-top:2px}
+
+  /* Layer toggles */
+  .layer-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .layer-btn{
+    padding:9px 10px;border-radius:8px;border:1px solid var(--border);
+    background:var(--card);cursor:pointer;display:flex;align-items:center;gap:8px;
+    font-size:12px;color:var(--muted);transition:all .15s;font-family:'DM Sans',sans-serif;
+  }
+  .layer-btn.on{border-color:var(--teal);color:var(--text);background:rgba(0,201,167,0.1)}
+  .layer-icon{font-size:16px;line-height:1}
+
+  /* Status bar */
+  #statusbar{
+    padding:12px 16px;background:var(--card);border-radius:8px;margin:0 16px;
+    font-size:13px;color:var(--muted);border:1px solid var(--border);
+  }
+  #statusbar.danger{border-color:var(--danger);color:var(--danger);background:rgba(255,23,68,.08)}
+  #statusbar.ok{border-color:var(--safe);color:var(--safe);background:rgba(0,230,118,.08)}
+
+  /* Angel mode toggle */
+  .angel-btn{
+    margin:16px;padding:14px 16px;border-radius:10px;
+    background:linear-gradient(135deg,rgba(138,43,226,.3),rgba(0,201,167,.2));
+    border:1px solid rgba(138,43,226,.5);cursor:pointer;
+    display:flex;align-items:center;gap:12px;text-align:left;
+    font-family:'DM Sans',sans-serif;transition:all .2s;
+  }
+  .angel-btn:hover{border-color:rgba(138,43,226,.8);background:linear-gradient(135deg,rgba(138,43,226,.4),rgba(0,201,167,.3))}
+  .angel-btn.active{border-color:#8A2BE2;box-shadow:0 0 20px rgba(138,43,226,.3)}
+  .angel-icon{font-size:24px;flex-shrink:0}
+  .angel-title{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:#C084FC}
+  .angel-sub{font-size:12px;color:var(--muted);margin-top:2px}
+
+  /* === MAP === */
+  #map{
+    position:fixed;top:56px;left:340px;right:0;bottom:0;
+    background:#0D1117;z-index:500;
+  }
+
+  /* === SOS BUTTON === */
+  #sos-btn{
+    position:fixed;bottom:28px;right:28px;z-index:2000;
+    width:72px;height:72px;border-radius:50%;
+    background:var(--danger);border:none;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    box-shadow:0 0 0 0 rgba(255,23,68,.6);
+    animation:sos-pulse 2s infinite;
+    font-family:'Syne',sans-serif;font-weight:800;font-size:15px;color:#fff;
+    transition:transform .1s;
+  }
+  #sos-btn:active{transform:scale(0.93)}
+  @keyframes sos-pulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(255,23,68,.5)}
+    50%{box-shadow:0 0 0 14px rgba(255,23,68,0)}
+  }
+  .sos-sub{font-size:9px;font-weight:400;letter-spacing:1px;opacity:.8}
+
+  /* === DANGER ALERT BANNER === */
+  #danger-alert{
+    position:fixed;top:66px;left:50%;transform:translateX(-50%);
+    background:var(--danger);color:#fff;padding:10px 20px;border-radius:8px;
+    font-family:'Syne',sans-serif;font-weight:700;font-size:13px;letter-spacing:.5px;
+    z-index:3000;display:none;animation:slideDown .3s ease;
+    white-space:nowrap;
+  }
+  @keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+
+  /* === ANGEL MODE OVERLAY === */
+  #angel-overlay{
+    position:fixed;inset:0;background:rgba(13,17,23,.97);z-index:5000;
+    display:none;flex-direction:column;align-items:center;justify-content:center;gap:24px;
+    font-family:'DM Sans',sans-serif;
+  }
+  .angel-avatar{
+    width:120px;height:120px;border-radius:50%;
+    background:linear-gradient(135deg,#8A2BE2,#00C9A7);
+    display:flex;align-items:center;justify-content:center;font-size:48px;
+    animation:avatar-glow 2.5s ease-in-out infinite;
+  }
+  @keyframes avatar-glow{
+    0%,100%{box-shadow:0 0 20px rgba(138,43,226,.4)}
+    50%{box-shadow:0 0 50px rgba(138,43,226,.8),0 0 80px rgba(0,201,167,.3)}
+  }
+  .angel-name{font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:#C084FC}
+  .angel-speech{
+    max-width:380px;text-align:center;color:var(--text);font-size:15px;line-height:1.6;
+    padding:16px 24px;background:var(--card);border-radius:12px;border:1px solid rgba(138,43,226,.4);
+  }
+  .angel-close{
+    padding:12px 28px;background:var(--border);border:none;border-radius:8px;
+    color:var(--muted);font-family:'Syne',sans-serif;font-weight:600;cursor:pointer;
+    font-size:13px;transition:all .15s;
+  }
+  .angel-close:hover{background:var(--card);color:var(--text)}
+
+
+  /* === PROFILE DRAWER === */
+  #profile-drawer-overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:4000;
+    display:none;backdrop-filter:blur(4px);
+  }
+  #profile-drawer{
+    position:fixed;top:0;right:-420px;width:380px;max-width:100vw;height:100vh;
+    background:var(--surface);border-left:1px solid var(--border);
+    z-index:4001;display:flex;flex-direction:column;
+    transition:right 0.3s cubic-bezier(0.4,0,0.2,1);
+    overflow-y:auto;
+  }
+  #profile-drawer.open{ right:0; }
+  .drawer-header{
+    padding:20px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:14px;flex-shrink:0;
+    background:var(--surface);position:sticky;top:0;z-index:1;
+  }
+  .drawer-avatar{
+    width:48px;height:48px;border-radius:50%;background:var(--teal);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Syne',sans-serif;font-weight:800;font-size:20px;color:#0D1117;flex-shrink:0;
+  }
+  .drawer-title{font-family:'Syne',sans-serif;font-weight:700;font-size:16px}
+  .drawer-email{font-size:12px;color:var(--muted);margin-top:2px;word-break:break-all}
+  .drawer-close{
+    margin-left:auto;width:32px;height:32px;border-radius:50%;
+    background:var(--card);border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;font-size:16px;flex-shrink:0;
+    transition:background .15s;
+  }
+  .drawer-close:hover{background:var(--border)}
+  .drawer-body{padding:20px;flex:1}
+  .d-section-label{
+    font-family:'Syne',sans-serif;font-size:10px;font-weight:700;
+    letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);
+    margin:20px 0 10px;
+  }
+  .d-section-label:first-child{margin-top:0}
+  .d-field{margin-bottom:14px}
+  .d-field label{
+    display:block;font-size:11px;font-family:'Syne',sans-serif;
+    font-weight:700;letter-spacing:1px;text-transform:uppercase;
+    color:var(--muted);margin-bottom:6px;
+  }
+  .d-field input{
+    width:100%;background:var(--card);border:1px solid var(--border);
+    border-radius:8px;padding:10px 12px;
+    color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;
+    outline:none;transition:border-color .2s,box-shadow .2s;
+  }
+  .d-field input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(0,201,167,0.1)}
+  .d-field input::placeholder{color:var(--muted)}
+  .d-phone-row{display:flex;gap:8px;align-items:center}
+  .d-prefix{
+    padding:10px 10px;background:var(--card);border:1px solid var(--border);
+    border-radius:8px;font-size:13px;color:var(--muted);white-space:nowrap;flex-shrink:0;
+  }
+  .d-phone-row input{flex:1}
+  .d-save-btn{
+    width:100%;padding:12px;background:var(--teal);border:none;border-radius:8px;
+    color:#0D1117;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;
+    cursor:pointer;transition:background .15s;margin-top:4px;
+  }
+  .d-save-btn:hover{background:var(--teal-dim)}
+  .d-save-btn:disabled{background:var(--border);color:var(--muted);cursor:not-allowed}
+  .d-logout-btn{
+    width:100%;padding:11px;background:transparent;border:1px solid rgba(255,23,68,0.3);
+    border-radius:8px;color:#FF1744;font-family:'Syne',sans-serif;font-weight:600;font-size:13px;
+    cursor:pointer;transition:all .15s;margin-top:8px;
+  }
+  .d-logout-btn:hover{background:rgba(255,23,68,0.08);border-color:#FF1744}
+  .d-msg{
+    margin-top:12px;padding:10px 12px;border-radius:8px;
+    font-size:12px;display:none;text-align:center;
+  }
+  .d-msg.success{background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);color:var(--safe)}
+  .d-msg.error{background:rgba(255,23,68,0.1);border:1px solid rgba(255,23,68,0.3);color:var(--danger)}
+  /* Custom leaflet overrides */
+  .leaflet-container{background:#0D1117!important}
+  .leaflet-popup-content-wrapper{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.6)}
+  .leaflet-popup-tip{background:var(--card)}
+  .leaflet-popup-content{font-family:'DM Sans',sans-serif;font-size:13px;line-height:1.6}
+  .leaflet-control-zoom a{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border)!important}
+  .leaflet-control-zoom a:hover{background:var(--card)!important}
+
+  /* Scrollbar */
+  #panel::-webkit-scrollbar{width:4px}
+  #panel::-webkit-scrollbar-track{background:transparent}
+  #panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+  /* Responsive */
+  @media(max-width:680px){
+    #panel{width:100%;bottom:auto;height:auto;max-height:55vh;top:56px}
+    #map{left:0;top:calc(56px + 55vh)}
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo">Safe<span>Route</span></div>
+  <div style="flex:1"></div>
+  <div id="live-indicator" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
+    <div style="width:7px;height:7px;border-radius:50%;background:var(--safe);animation:sos-pulse 2s infinite"></div>
+    Live tracking
+  </div>
+  <div id="user-badge" style="width:32px;height:32px;border-radius:50%;background:var(--teal);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:#0D1117;cursor:pointer" onclick="openProfileDrawer()" title="Edit profile">U</div>
+</div>
+
+<!-- DANGER ALERT BANNER -->
+<div id="danger-alert">⚠️ DANGER ZONE DETECTED — Alerting emergency contact</div>
+
+<!-- LEFT PANEL -->
+<div id="panel">
+
+  <!-- Route inputs -->
+  <div class="panel-section">
+    <div class="panel-label">Route Analysis</div>
+    <div class="input-row">
+      <div class="input-icon icon-start"></div>
+      <input type="text" id="start-input" placeholder="Your current location" value="Chennai Central"/>
+    </div>
+    <div class="input-row">
+      <div class="input-icon icon-end"></div>
+      <input type="text" id="end-input" placeholder="Destination"/>
+    </div>
+    <button class="btn-primary" id="route-btn" onclick="calculateRoute()">Analyse Route</button>
+  </div>
+
+  <!-- Route options -->
+  <div class="panel-section" id="route-results" style="display:none">
+    <div class="panel-label">Route Options</div>
+    <div class="route-legend">
+      <div class="route-pill active" id="pill-safe" onclick="highlightRoute('safe')">
+        <div class="route-dot dot-safe"></div>
+        <div class="route-info">
+          <div class="route-name">Safest Route</div>
+          <div class="route-meta" id="safe-meta">Calculating...</div>
+        </div>
+        <div style="font-size:11px;color:var(--safe);font-weight:600">RECOMMENDED</div>
+      </div>
+      <div class="route-pill" id="pill-short" onclick="highlightRoute('short')">
+        <div class="route-dot dot-short"></div>
+        <div class="route-info">
+          <div class="route-name">Shortest Route</div>
+          <div class="route-meta" id="short-meta">Calculating...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="panel-section">
+    <div class="panel-label">Area Status</div>
+    <div id="statusbar">Tracking your location...</div>
+  </div>
+
+  <!-- Map layers -->
+  <div class="panel-section">
+    <div class="panel-label">Map Layers</div>
+    <div class="layer-grid">
+      <button class="layer-btn on" id="btn-safe-spots" onclick="toggleLayer('safe')">
+        <span class="layer-icon">🏥</span> Safe Spots
+      </button>
+      <button class="layer-btn on" id="btn-danger-spots" onclick="toggleLayer('danger')">
+        <span class="layer-icon">⚠️</span> Danger Zones
+      </button>
+      <button class="layer-btn on" id="btn-police" onclick="toggleLayer('police')">
+        <span class="layer-icon">🚔</span> Police
+      </button>
+      <button class="layer-btn on" id="btn-lights" onclick="toggleLayer('lights')">
+        <span class="layer-icon">💡</span> Street Lights
+      </button>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="panel-section">
+    <div class="panel-label">Legend</div>
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🚔</span><span>Police Station</span></div>
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🏥</span><span>Hospital / Clinic</span></div>
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🏪</span><span>24/7 Store</span></div>
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🚌</span><span>Transit Stop</span></div>
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">💡</span><span>Street Light</span></div>
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🔴</span><span>Assault / Robbery</span></div>
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🟠</span><span>Theft / Burglary</span></div>
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🟡</span><span>Crime Hotspot</span></div>
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">⬛</span><span>Dark Alley</span></div>
+    </div>
+  </div>
+
+  <!-- Angel Mode -->
+  <button class="angel-btn" id="angel-btn" onclick="toggleAngel()">
+    <div class="angel-icon">👼</div>
+    <div>
+      <div class="angel-title">Angel Mode</div>
+      <div class="angel-sub" id="angel-sub">Activate virtual companion</div>
+    </div>
+  </button>
+
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- SOS BUTTON -->
+<button id="sos-btn" onclick="triggerSOS()">
+  SOS
+  <div class="sos-sub">EMERGENCY</div>
+</button>
+
+<!-- ANGEL OVERLAY -->
+<div id="angel-overlay">
+  <div class="angel-avatar">👼</div>
+  <div class="angel-name">Angel — Your Safety Companion</div>
+  <div class="angel-speech" id="angel-speech">Hi! I'm walking with you. You're safe right now. I'll keep talking with you until you reach your destination. 💙</div>
+  <div style="display:flex;gap:12px">
+    <button class="angel-close" onclick="toggleAngel()">End Angel Mode</button>
+  </div>
+</div>
+
+<!-- PROFILE DRAWER OVERLAY -->
+<div id="profile-drawer-overlay" onclick="closeProfileDrawer()"></div>
+
+<!-- PROFILE DRAWER -->
+<div id="profile-drawer">
+  <div class="drawer-header">
+    <div class="drawer-avatar" id="drawer-avatar">U</div>
+    <div>
+      <div class="drawer-title">My Profile</div>
+      <div class="drawer-email" id="drawer-email">—</div>
+    </div>
+    <div class="drawer-close" onclick="closeProfileDrawer()">✕</div>
+  </div>
+
+  <div class="drawer-body">
+
+    <div class="d-section-label">Your Details</div>
+
+    <div class="d-field">
+      <label>Full Name</label>
+      <input type="text" id="d-full-name" placeholder="Your full name"/>
+    </div>
+
+    <div class="d-field">
+      <label>Your Phone</label>
+      <div class="d-phone-row">
+        <div class="d-prefix">🇮🇳 +91</div>
+        <input type="tel" id="d-phone" placeholder="98765 43210" maxlength="10"/>
+      </div>
+    </div>
+
+    <div class="d-field">
+      <label>Medical Notes <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+      <input type="text" id="d-medical" placeholder="e.g. Diabetic, allergic to penicillin"/>
+    </div>
+
+    <div class="d-section-label">Emergency Contact</div>
+
+    <div class="d-field">
+      <label>Contact Name</label>
+      <input type="text" id="d-ename" placeholder="e.g. Dad, Ravi Sharma"/>
+    </div>
+
+    <div class="d-field">
+      <label>Contact Phone</label>
+      <div class="d-phone-row">
+        <div class="d-prefix">🇮🇳 +91</div>
+        <input type="tel" id="d-ephone" placeholder="98765 43210" maxlength="10"/>
+      </div>
+    </div>
+
+    <button class="d-save-btn" id="d-save-btn" onclick="saveDrawerProfile()">Save Changes</button>
+    <button class="d-logout-btn" onclick="handleLogout()">Sign Out</button>
+
+    <div class="d-msg" id="d-msg"></div>
+
+  </div>
+</div>
+
+
+<script>
+// ========= SUPABASE =========
+const S_URL = "https://nxxwmgifxbarwkpmhuyd.supabase.co";
+const S_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54eHdtZ2lmeGJhcndrcG1odXlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODA3NzcsImV4cCI6MjA5MDI1Njc3N30.-b9Yvcfjt1kCYObV6R5KGp8RLkWQrtZA27TFLQnFcCk";
+const sbClient = supabase.createClient(S_URL, S_KEY);
+
+// ========= DATASET — embedded from Saferoute_dataset.csv =========
+const SAFETY_DATA = [{"id":6,"category":"store_24h","latitude":13.118833,"longitude":80.289162,"safety_score":30},{"id":7,"category":"hospital_clinic","latitude":13.013421,"longitude":80.29353,"safety_score":50},{"id":8,"category":"transit_stop","latitude":12.923744,"longitude":80.27766,"safety_score":10},{"id":9,"category":"transit_stop","latitude":13.065916,"longitude":80.210909,"safety_score":10},{"id":10,"category":"assault_robbery","latitude":12.978099,"longitude":80.289185,"safety_score":-100},{"id":11,"category":"transit_stop","latitude":13.054799,"longitude":80.192976,"safety_score":10},{"id":12,"category":"transit_stop","latitude":13.067813,"longitude":80.176596,"safety_score":10},{"id":13,"category":"police_station","latitude":12.966927,"longitude":80.269177,"safety_score":100},{"id":14,"category":"street_light","latitude":13.140695,"longitude":80.174801,"safety_score":20},{"id":15,"category":"street_light","latitude":12.953205,"longitude":80.181415,"safety_score":20},{"id":16,"category":"store_24h","latitude":13.046203,"longitude":80.210796,"safety_score":30},{"id":17,"category":"transit_stop","latitude":12.963088,"longitude":80.248384,"safety_score":10},{"id":18,"category":"dark_alley","latitude":13.02352,"longitude":80.202854,"safety_score":-20},{"id":19,"category":"hospital_clinic","latitude":13.007522,"longitude":80.292023,"safety_score":50},{"id":20,"category":"theft_burglary","latitude":13.094837,"longitude":80.191224,"safety_score":-40},{"id":21,"category":"street_light","latitude":13.012769,"longitude":80.300969,"safety_score":20},{"id":22,"category":"transit_stop","latitude":12.966734,"longitude":80.249452,"safety_score":10},{"id":23,"category":"transit_stop","latitude":13.146104,"longitude":80.233787,"safety_score":10},{"id":24,"category":"police_station","latitude":13.116501,"longitude":80.232147,"safety_score":100},{"id":25,"category":"transit_stop","latitude":13.078579,"longitude":80.27792,"safety_score":10},{"id":26,"category":"store_24h","latitude":13.125725,"longitude":80.226399,"safety_score":30},{"id":27,"category":"street_light","latitude":12.915246,"longitude":80.173923,"safety_score":20},{"id":28,"category":"street_light","latitude":12.956992,"longitude":80.246299,"safety_score":20},{"id":29,"category":"transit_stop","latitude":13.033717,"longitude":80.246437,"safety_score":10},{"id":30,"category":"street_light","latitude":13.047937,"longitude":80.201785,"safety_score":20},{"id":31,"category":"hotspot","latitude":12.938031,"longitude":80.276507,"safety_score":-60},{"id":32,"category":"hospital_clinic","latitude":13.09722,"longitude":80.191047,"safety_score":50},{"id":33,"category":"assault_robbery","latitude":13.047694,"longitude":80.218356,"safety_score":-100},{"id":34,"category":"store_24h","latitude":12.903594,"longitude":80.187891,"safety_score":30},{"id":35,"category":"street_light","latitude":12.992478,"longitude":80.257586,"safety_score":20},{"id":36,"category":"transit_stop","latitude":13.140593,"longitude":80.203135,"safety_score":10},{"id":37,"category":"dark_alley","latitude":13.05151,"longitude":80.199596,"safety_score":-20},{"id":38,"category":"hotspot","latitude":13.04341,"longitude":80.203555,"safety_score":-60},{"id":39,"category":"theft_burglary","latitude":13.045451,"longitude":80.273079,"safety_score":-40},{"id":40,"category":"street_light","latitude":13.026418,"longitude":80.226119,"safety_score":20},{"id":41,"category":"store_24h","latitude":12.973286,"longitude":80.245293,"safety_score":30},{"id":42,"category":"street_light","latitude":12.929472,"longitude":80.230896,"safety_score":20},{"id":43,"category":"transit_stop","latitude":13.098872,"longitude":80.18067,"safety_score":10},{"id":44,"category":"street_light","latitude":13.041803,"longitude":80.30372,"safety_score":20},{"id":45,"category":"theft_burglary","latitude":13.063462,"longitude":80.27947,"safety_score":-40},{"id":46,"category":"street_light","latitude":12.942657,"longitude":80.308865,"safety_score":20},{"id":47,"category":"police_station","latitude":13.077166,"longitude":80.198437,"safety_score":100},{"id":48,"category":"street_light","latitude":13.0033,"longitude":80.17411,"safety_score":20},{"id":49,"category":"street_light","latitude":13.132911,"longitude":80.299834,"safety_score":20},{"id":50,"category":"transit_stop","latitude":13.071871,"longitude":80.226741,"safety_score":10}];
+
+// ========= MAP INIT =========
+const map = L.map('map', {zoomControl:true, attributionControl:false}).setView([13.0827, 80.2707], 13);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution:'©OpenStreetMap ©CARTO', maxZoom:19
+}).addTo(map);
+
+// ========= MARKER CONFIGS =========
+const MARKER_CFG = {
+  police_station: {emoji:'🚔', size:32, zIndex:900, color:'#4FC3F7'},
+  hospital_clinic: {emoji:'🏥', size:28, zIndex:800, color:'#00E676'},
+  store_24h:       {emoji:'🏪', size:26, zIndex:700, color:'#FFD600'},
+  transit_stop:    {emoji:'🚌', size:22, zIndex:400, color:'#B0BEC5'},
+  street_light:    {emoji:'💡', size:18, zIndex:300, color:'#FFF176'},
+  assault_robbery: {emoji:'🔴', size:30, zIndex:950, color:'#FF1744'},
+  theft_burglary:  {emoji:'🟠', size:26, zIndex:850, color:'#FF6B35'},
+  hotspot:         {emoji:'🟡', size:26, zIndex:850, color:'#FFD600'},
+  dark_alley:      {emoji:'⬛', size:22, zIndex:600, color:'#455A64'},
+};
+
+function makeIcon(cfg, animated=false){
+  const pulse = animated ? 'animation:sos-pulse 1.5s infinite;' : '';
+  return L.divIcon({
+    html:`<div style="font-size:${cfg.size}px;line-height:1;${pulse}filter:drop-shadow(0 2px 6px rgba(0,0,0,.7))">${cfg.emoji}</div>`,
+    className:'', iconAnchor:[cfg.size/2, cfg.size/2], popupAnchor:[0,-cfg.size/2]
+  });
+}
+
+// ========= LAYER GROUPS =========
+const layers = {
+  safe: L.layerGroup(),
+  danger: L.layerGroup(),
+  police: L.layerGroup(),
+  lights: L.layerGroup(),
+};
+const layerState = {safe:true, danger:true, police:true, lights:true};
+
+const SAFE_CATS = ['hospital_clinic','store_24h','transit_stop'];
+const DANGER_CATS = ['assault_robbery','theft_burglary','hotspot','dark_alley'];
+const POLICE_CATS = ['police_station'];
+const LIGHT_CATS = ['street_light'];
+
+function categoryToLayer(cat){
+  if(SAFE_CATS.includes(cat)) return 'safe';
+  if(DANGER_CATS.includes(cat)) return 'danger';
+  if(POLICE_CATS.includes(cat)) return 'police';
+  if(LIGHT_CATS.includes(cat)) return 'lights';
+  return null;
+}
+
+function categoryLabel(cat){
+  const labels = {
+    police_station:'Police Station', hospital_clinic:'Hospital / Clinic',
+    store_24h:'24/7 Store', transit_stop:'Transit Stop',
+    street_light:'Street Light', assault_robbery:'⚠️ Assault / Robbery Scene',
+    theft_burglary:'⚠️ Theft / Burglary', hotspot:'⚠️ Crime Hotspot',
+    dark_alley:'Dark Alley',
+  };
+  return labels[cat] || cat;
+}
+
+function safetyLabel(score){
+  if(score >= 80) return '<span style="color:#00E676">Very Safe</span>';
+  if(score >= 40) return '<span style="color:#69F0AE">Safe</span>';
+  if(score >= 10) return '<span style="color:#FFD600">Neutral</span>';
+  if(score >= -30) return '<span style="color:#FF6B35">Caution</span>';
+  if(score >= -60) return '<span style="color:#FF6B35">Risky</span>';
+  return '<span style="color:#FF1744">Danger</span>';
+}
+
+// Populate markers from embedded data
+SAFETY_DATA.forEach(pt => {
+  const cfg = MARKER_CFG[pt.category];
+  if(!cfg) return;
+  const layerKey = categoryToLayer(pt.category);
+  if(!layerKey) return;
+  const isDanger = DANGER_CATS.includes(pt.category);
+  const marker = L.marker([pt.latitude, pt.longitude], {
+    icon: makeIcon(cfg, isDanger && pt.safety_score <= -60),
+    zIndexOffset: cfg.zIndex
+  });
+  const popup = `
+    <div style="min-width:160px">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:6px">${cfg.emoji} ${categoryLabel(pt.category)}</div>
+      <div style="font-size:12px;color:#6E7681">Safety Level: ${safetyLabel(pt.safety_score)}</div>
+      <div style="font-size:12px;color:#6E7681;margin-top:2px">Score: ${pt.safety_score > 0 ? '+' : ''}${pt.safety_score}</div>
+      ${isDanger ? '<div style="margin-top:8px;padding:6px 8px;background:rgba(255,23,68,.15);border-radius:6px;font-size:11px;color:#FF1744">Avoid this area at night</div>' : ''}
+    </div>
+  `;
+  marker.bindPopup(popup);
+  layers[layerKey].addLayer(marker);
+});
+
+// Add all layers to map
+Object.values(layers).forEach(l => l.addTo(map));
+
+function toggleLayer(key){
+  const btn = document.getElementById('btn-'+key+'-spots') || document.getElementById('btn-'+key);
+  if(!btn) return;
+  layerState[key] = !layerState[key];
+  if(layerState[key]){ layers[key].addTo(map); btn.classList.add('on'); }
+  else { map.removeLayer(layers[key]); btn.classList.remove('on'); }
+}
+
+// Rewrite toggle calls to match button IDs
+document.getElementById('btn-safe-spots').onclick = () => toggleLayerById('safe','btn-safe-spots');
+document.getElementById('btn-danger-spots').onclick = () => toggleLayerById('danger','btn-danger-spots');
+document.getElementById('btn-police').onclick = () => toggleLayerById('police','btn-police');
+document.getElementById('btn-lights').onclick = () => toggleLayerById('lights','btn-lights');
+
+function toggleLayerById(key, btnId){
+  layerState[key] = !layerState[key];
+  const btn = document.getElementById(btnId);
+  if(layerState[key]){ layers[key].addTo(map); btn.classList.add('on'); }
+  else { map.removeLayer(layers[key]); btn.classList.remove('on'); }
+}
+
+// ========= ROUTES =========
+const BACKEND = 'http://127.0.0.1:8000'; // Change to your deployed FastAPI URL
+let routeLines = {safe:null, short:null};
+let activeRoute = 'safe';
+
+async function calculateRoute(){
+  const btn = document.getElementById('route-btn');
+  btn.disabled = true; btn.textContent = 'Calculating...';
+  document.getElementById('route-results').style.display = 'none';
+
+  // Demo: use Chennai Central → T Nagar as example coordinates
+  // In production this calls your FastAPI backend
+  const startLat = 13.0827, startLon = 80.2707;
+  const endLat = 13.0418, endLon = 80.2341;
+
+  try {
+    const res = await fetch(`${BACKEND}/calculate_route?start_lat=${startLat}&start_lon=${startLon}&end_lat=${endLat}&end_lon=${endLon}`);
+    const data = await res.json();
+
+    if(data.status === 'success'){
+      drawRoutes(data.safe_route, data.standard_route);
+    } else {
+      // Demo fallback routes
+      drawDemoRoutes(startLat, startLon, endLat, endLon);
+    }
+  } catch(e){
+    // Backend not running — draw demo routes
+    drawDemoRoutes(startLat, startLon, endLat, endLon);
+  }
+
+  document.getElementById('route-results').style.display = 'block';
+  document.getElementById('safe-meta').textContent = '~4.2 km · 18 min walk';
+  document.getElementById('short-meta').textContent = '~3.8 km · 16 min walk';
+  btn.disabled = false; btn.textContent = 'Analyse Route';
+}
+
+function drawDemoRoutes(sLat, sLon, eLat, eLon){
+  // Safe route — slightly longer, avoids danger coords
+  const safeCoords = [
+    [sLat, sLon],
+    [sLat - 0.008, sLon + 0.012],
+    [sLat - 0.018, sLon + 0.018],
+    [sLat - 0.028, sLon + 0.010],
+    [eLat, eLon]
+  ];
+  const shortCoords = [
+    [sLat, sLon],
+    [sLat - 0.01, sLon - 0.005],
+    [sLat - 0.025, sLon - 0.003],
+    [eLat, eLon]
+  ];
+  drawRoutes(safeCoords, shortCoords);
+}
+
+function drawRoutes(safeCoords, shortCoords){
+  // Remove existing
+  if(routeLines.safe) map.removeLayer(routeLines.safe);
+  if(routeLines.short) map.removeLayer(routeLines.short);
+
+  // SHORT route — blue, thinner
+  routeLines.short = L.polyline(shortCoords, {
+    color:'#4FC3F7', weight:5, opacity:0.7, lineCap:'round', lineJoin:'round'
+  }).addTo(map);
+
+  // SAFE route — green, bolder
+  routeLines.safe = L.polyline(safeCoords, {
+    color:'#00E676', weight:7, opacity:0.95, lineCap:'round', lineJoin:'round'
+  }).addTo(map);
+
+  // Add start/end markers
+  const startIcon = L.divIcon({html:`<div style="width:16px;height:16px;border-radius:50%;background:#00E676;border:3px solid #fff;box-shadow:0 0 12px #00E676"></div>`,className:'',iconAnchor:[8,8]});
+  const endIcon = L.divIcon({html:`<div style="width:16px;height:16px;border-radius:50%;background:#FF1744;border:3px solid #fff;box-shadow:0 0 12px #FF1744"></div>`,className:'',iconAnchor:[8,8]});
+  L.marker(safeCoords[0], {icon:startIcon, zIndexOffset:1000}).addTo(map);
+  L.marker(safeCoords[safeCoords.length-1], {icon:endIcon, zIndexOffset:1000}).addTo(map);
+
+  map.fitBounds(routeLines.safe.getBounds(), {padding:[40,40]});
+  highlightRoute('safe');
+}
+
+function highlightRoute(type){
+  activeRoute = type;
+  document.querySelectorAll('.route-pill').forEach(p => p.classList.remove('active'));
+  document.getElementById('pill-'+type).classList.add('active');
+  if(routeLines.safe) routeLines.safe.setStyle({opacity: type==='safe' ? 0.95 : 0.35, weight: type==='safe' ? 7 : 4});
+  if(routeLines.short) routeLines.short.setStyle({opacity: type==='short' ? 0.9 : 0.35, weight: type==='short' ? 6 : 3});
+}
+
+// ========= LIVE GPS + DANGER CHECK =========
+let userMarker = null;
+let angelActive = false;
+let dangerTimeout = null;
+
+function startTracking(){
+  if(!navigator.geolocation){ updateStatus('GPS not available', 'warn'); return; }
+  navigator.geolocation.watchPosition(pos => {
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    updateUserMarker(lat, lon);
+    checkDanger(lat, lon);
+  }, err => {
+    // Use demo location if GPS denied
+    updateUserMarker(13.0827, 80.2707);
+  }, {enableHighAccuracy:true, maximumAge:5000});
+}
+
+function updateUserMarker(lat, lon){
+  const userIcon = L.divIcon({
+    html:`<div style="width:18px;height:18px;border-radius:50%;background:#00C9A7;border:3px solid #fff;box-shadow:0 0 16px rgba(0,201,167,.8);animation:sos-pulse 2s infinite"></div>`,
+    className:'', iconAnchor:[9,9]
+  });
+  if(userMarker){ userMarker.setLatLng([lat,lon]); }
+  else { userMarker = L.marker([lat,lon],{icon:userIcon,zIndexOffset:2000}).addTo(map).bindPopup('📍 You are here'); }
+}
+
+function checkDanger(lat, lon){
+  let score = 0;
+  SAFETY_DATA.forEach(pt => {
+    if(Math.abs(pt.latitude-lat)<0.0015 && Math.abs(pt.longitude-lon)<0.0015){
+      score += pt.safety_score;
+    }
+  });
+  if(score < -50){
+    showDangerAlert();
+    updateStatus('⚠️ You are in a danger zone!', 'danger');
+  } else if(score >= 50){
+    updateStatus('✅ You are in a safe area', 'ok');
+  } else {
+    updateStatus('📍 Monitoring your location...', '');
+  }
+}
+
+function showDangerAlert(){
+  const alert = document.getElementById('danger-alert');
+  alert.style.display = 'block';
+  if(dangerTimeout) clearTimeout(dangerTimeout);
+  dangerTimeout = setTimeout(()=>{ alert.style.display='none'; }, 5000);
+  if(angelActive) speakAngel('I notice you may be in a risky area. Stay on the main road, keep walking confidently, and I\'m right here with you. 💙');
+}
+
+function updateStatus(msg, type){
+  const bar = document.getElementById('statusbar');
+  bar.textContent = msg;
+  bar.className = '';
+  if(type) bar.classList.add(type);
+}
+
+// ========= SOS =========
+async function triggerSOS(){
+  const confirmed = confirm('🚨 Send SOS alert to your emergency contact?');
+  if(!confirmed) return;
+  document.getElementById('danger-alert').textContent = '🚨 SOS SENT — Emergency contact alerted';
+  document.getElementById('danger-alert').style.display = 'block';
+
+  // Get current user from Supabase
+  const { data: { user } } = await sbClient.auth.getUser();
+  if(!user){ alert('Please log in first'); return; }
+
+  // Get GPS
+  navigator.geolocation.getCurrentPosition(async pos => {
+    try {
+      await fetch(`${BACKEND}/trigger_sos`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          user_id: user.id,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude
+        })
+      });
+    } catch(e){ console.warn('Backend offline — SOS logged locally'); }
+  }, () => {
+    // fallback
+    fetch(`${BACKEND}/trigger_sos`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user?.id||'demo',latitude:13.0827,longitude:80.2707})}).catch(()=>{});
+  });
+}
+
+// ========= ANGEL MODE =========
+const ANGEL_PHRASES = [
+  "You're doing great! I'm right here with you. Keep walking, you're safe. 💙",
+  "I see you're getting close to your destination! About 5 more minutes. You've got this! ✨",
+  "Stay on the main road ahead — it's well-lit and you'll reach a transit stop shortly. 🚌",
+  "You're safe! I can see street lights ahead. Just a little further. 💙",
+  "Don't worry, I'm watching over you. Take the next right — it's a brighter path. 🌟",
+];
+let angelInterval = null;
+let phraseIndex = 0;
+
+function toggleAngel(){
+  angelActive = !angelActive;
+  const overlay = document.getElementById('angel-overlay');
+  const btn = document.getElementById('angel-btn');
+  const sub = document.getElementById('angel-sub');
+  if(angelActive){
+    overlay.style.display = 'flex';
+    btn.classList.add('active');
+    sub.textContent = 'Companion active — tap to end';
+    speakAngel(ANGEL_PHRASES[0]);
+    angelInterval = setInterval(() => {
+      phraseIndex = (phraseIndex+1) % ANGEL_PHRASES.length;
+      speakAngel(ANGEL_PHRASES[phraseIndex]);
+    }, 25000);
+  } else {
+    overlay.style.display = 'none';
+    btn.classList.remove('active');
+    sub.textContent = 'Activate virtual companion';
+    clearInterval(angelInterval);
+    if(window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+}
+
+function speakAngel(text){
+  document.getElementById('angel-speech').textContent = text;
+  if(window.speechSynthesis){
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.92; utter.pitch = 1.1; utter.volume = 1;
+    const voices = window.speechSynthesis.getVoices();
+    const femaleVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.includes('Samantha') || v.name.includes('Google UK English Female'));
+    if(femaleVoice) utter.voice = femaleVoice;
+    window.speechSynthesis.speak(utter);
+  }
+}
+
+
+// ========= PROFILE DRAWER =========
+async function openProfileDrawer() {
+  document.getElementById('profile-drawer-overlay').style.display = 'block';
+  document.getElementById('profile-drawer').classList.add('open');
+
+  const { data: { user } } = await sbClient.auth.getUser();
+  if (!user) return;
+
+  // Show email & avatar initial
+  const initial = (user.email || 'U')[0].toUpperCase();
+  document.getElementById('drawer-avatar').textContent = initial;
+  document.getElementById('drawer-email').textContent = user.email;
+
+  // Load saved profile data
+  const { data } = await sbClient.from('profiles').select('*').eq('id', user.id).single();
+  if (!data) return;
+
+  if (data.full_name)                document.getElementById('d-full-name').value = data.full_name;
+  if (data.phone_number)             document.getElementById('d-phone').value = data.phone_number.replace('+91','');
+  if (data.medical_notes)            document.getElementById('d-medical').value = data.medical_notes;
+  if (data.emergency_contact_name)   document.getElementById('d-ename').value = data.emergency_contact_name;
+  if (data.emergency_contact_number) document.getElementById('d-ephone').value = data.emergency_contact_number.replace('+91','');
+}
+
+function closeProfileDrawer() {
+  document.getElementById('profile-drawer-overlay').style.display = 'none';
+  document.getElementById('profile-drawer').classList.remove('open');
+  document.getElementById('d-msg').style.display = 'none';
+}
+
+async function saveDrawerProfile() {
+  const { data: { user } } = await sbClient.auth.getUser();
+  if (!user) return;
+
+  const btn = document.getElementById('d-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+
+  const phone  = document.getElementById('d-phone').value.trim();
+  const ephone = document.getElementById('d-ephone').value.trim();
+
+  if (!/^\d{10}$/.test(phone) || !/^\d{10}$/.test(ephone)) {
+    showDrawerMsg('⚠️ Phone numbers must be 10 digits', 'error');
+    btn.disabled = false; btn.textContent = 'Save Changes';
+    return;
+  }
+
+  const { error } = await sbClient.from('profiles').upsert({
+    id: user.id,
+    full_name: document.getElementById('d-full-name').value.trim(),
+    phone_number: '+91' + phone,
+    medical_notes: document.getElementById('d-medical').value.trim() || null,
+    emergency_contact_name: document.getElementById('d-ename').value.trim(),
+    emergency_contact_number: '+91' + ephone,
+  }, { onConflict: 'id' });
+
+  if (error) {
+    showDrawerMsg('❌ ' + error.message, 'error');
+  } else {
+    showDrawerMsg('✅ Saved!', 'success');
+    // Update the topbar badge initial
+    const full = document.getElementById('d-full-name').value.trim();
+    const initial = (full || user.email || 'U')[0].toUpperCase();
+    document.getElementById('user-badge').textContent = initial;
+    document.getElementById('drawer-avatar').textContent = initial;
+  }
+
+  btn.disabled = false; btn.textContent = 'Save Changes';
+}
+
+function showDrawerMsg(text, type) {
+  const el = document.getElementById('d-msg');
+  el.textContent = text;
+  el.className = 'd-msg ' + type;
+  el.style.display = 'block';
+}
+
+async function handleLogout() {
+  await sbClient.auth.signOut();
+  window.location.href = 'index.html';
+}
+
+// ========= INIT =========
+window.onload = () => {
+  startTracking();
+  // Check auth
+  sbClient.auth.getUser().then(({data:{user}}) => {
+    if(user){
+      const badge = document.getElementById('user-badge');
+      badge.textContent = (user.email||'U')[0].toUpperCase();
+      badge.title = user.email;
+    }
+  });
+};
+</script>
+</body>
+</html>

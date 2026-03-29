@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SafeRoute AI - Debugger</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { background: #1a1a1a; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .box { background: #2a2a2a; padding: 30px; border-radius: 12px; width: 320px; border: 1px solid #444; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 5px; border: 1px solid #555; background: #333; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #008080; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        #status { margin-top: 20px; font-size: 12px; color: #888; }
+    </style>
+</head>
+<body>
+
+    <div class="box">
+        <h2>SafeRoute AI 🛡️</h2>
+        <input type="email" id="u-email" placeholder="Email">
+        <input type="password" id="u-pass" placeholder="Password">
+        <button onclick="handleSignUp()">Sign Up</button>
+        <button onclick="handleLogin()" style="background: #444;">Login</button>
+    </div>
+
+    <div id="status">Checking Connection...</div>
+
+    <script>
+    const S_URL = "https://nxxwmgifxbarwkpmhuyd.supabase.co";
+    const S_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54eHdtZ2lmeGJhcndrcG1odXlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODA3NzcsImV4cCI6MjA5MDI1Njc3N30.-b9Yvcfjt1kCYObV6R5KGp8RLkWQrtZA27TFLQnFcCk";
+    const sb = supabase.createClient(S_URL, S_KEY);
+
+    window.onload = async function () {
+        // Always sign out any leftover session when landing on the login page.
+        // This ensures the user must actively log in every time they open index.html.
+        await sb.auth.signOut();
+        document.getElementById('status').innerHTML = "🟢 Ready — Sign up or log in";
+    };
+
+    // After login/signup: check if profile is filled → route accordingly
+    async function redirectBasedOnProfile(userId) {
+        const { data } = await sb.from('profiles').select('full_name').eq('id', userId).single();
+        if (data && data.full_name) {
+            window.location.href = 'map.html';   // returning user, profile exists
+        } else {
+            window.location.href = 'profile.html'; // new user, needs to fill profile
+        }
+    }
+
+    async function handleSignUp() {
+        const email = document.getElementById('u-email').value.trim();
+        const password = document.getElementById('u-pass').value;
+        if (!email || !password) { setStatus('❌ Enter email and password', 'red'); return; }
+
+        setStatus('⏳ Creating account...');
+        const { data, error } = await sb.auth.signUp({ email, password });
+        if (error) { setStatus('❌ ' + error.message, 'red'); return; }
+
+        // New user → go fill profile
+        setStatus('✅ Account created! Setting up your profile...');
+        setTimeout(() => { window.location.href = 'profile.html'; }, 800);
+    }
+
+    async function handleLogin() {
+        const email = document.getElementById('u-email').value.trim();
+        const password = document.getElementById('u-pass').value;
+        if (!email || !password) { setStatus('❌ Enter email and password', 'red'); return; }
+
+        setStatus('⏳ Logging in...');
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) { setStatus('❌ ' + error.message, 'red'); return; }
+
+        setStatus('✅ Welcome back! Loading...');
+        await redirectBasedOnProfile(data.user.id);
+    }
+
+    function setStatus(msg, color) {
+        const el = document.getElementById('status');
+        el.innerHTML = msg;
+        el.style.color = color === 'red' ? '#FF1744' : '#888';
+    }
+    </script>
+</body>
+</html>
