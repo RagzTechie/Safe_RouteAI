@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+supabase
+osmnx
+networkx
+pandas
+python-dotenv
+supabase
+twilio 
+shapely 
+pydantic
+scikit-learn

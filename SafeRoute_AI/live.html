@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SafeRoute — Live Location</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--teal:#00C9A7;--danger:#FF1744;--bg:#0D1117;--surface:#161B22;--card:#1E2730;--border:#2A3340;--text:#E6EDF3;--muted:#6E7681}
+  html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);overflow:hidden}
+  #topbar{position:fixed;top:0;left:0;right:0;height:56px;background:rgba(13,17,23,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:14px;z-index:1000}
+  .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:var(--teal)}
+  .logo span{color:var(--text)}
+  #status-chip{padding:5px 14px;border-radius:20px;font-size:12px;font-family:'Syne',sans-serif;font-weight:700;letter-spacing:.5px}
+  .chip-live{background:rgba(255,23,68,.15);color:var(--danger);border:1px solid rgba(255,23,68,.4);animation:blink 1.5s infinite}
+  .chip-stale{background:rgba(110,118,129,.15);color:var(--muted);border:1px solid var(--border)}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.6}}
+  #map{position:fixed;top:56px;left:0;right:0;bottom:0}
+  #info-card{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 20px;min-width:260px;text-align:center;z-index:1000;box-shadow:0 8px 32px rgba(0,0,0,.6)}
+  .info-title{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-bottom:4px}
+  .info-sub{font-size:12px;color:var(--muted)}
+  .leaflet-container{background:#0D1117!important}
+  .leaflet-popup-content-wrapper{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:10px}
+  .leaflet-popup-tip{background:var(--card)}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div class="logo">Safe<span>Route</span></div>
+  <div style="font-size:13px;color:var(--muted)">Live Tracking</div>
+  <div id="status-chip" class="chip-stale">Connecting...</div>
+  <div style="flex:1"></div>
+  <div id="last-updated" style="font-size:11px;color:var(--muted)"></div>
+</div>
+
+<div id="map"></div>
+
+<div id="info-card">
+  <div class="info-title">📍 Live Location</div>
+  <div class="info-sub" id="coords-text">Waiting for location...</div>
+  <div class="info-sub" style="margin-top:4px" id="age-text"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const BACKEND = 'http://127.0.0.1:8000';
+const params  = new URLSearchParams(window.location.search);
+const token   = params.get('token');
+
+// Supabase fallback — used when backend is unreachable (e.g. shared externally)
+const S_URL = "https://nxxwmgifxbarwkpmhuyd.supabase.co";
+const S_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54eHdtZ2lmeGJhcndrcG1odXlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODA3NzcsImV4cCI6MjA5MDI1Njc3N30.-b9Yvcfjt1kCYObV6R5KGp8RLkWQrtZA27TFLQnFcCk";
+const sbLive = supabase.createClient(S_URL, S_KEY);
+
+const map = L.map('map', {zoomControl:true, attributionControl:false}).setView([13.0827, 80.2707], 15);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {maxZoom:19}).addTo(map);
+
+let marker = null;
+let firstFix = true;
+
+function updateMarker(lat, lon) {
+  const icon = L.divIcon({
+    html:`<div style="position:relative">
+      <div style="width:22px;height:22px;border-radius:50%;background:#FF1744;border:3px solid #fff;box-shadow:0 0 20px rgba(255,23,68,.9)"></div>
+      <div style="position:absolute;top:-2px;left:-2px;width:26px;height:26px;border-radius:50%;background:rgba(255,23,68,.3);animation:ping 1.5s infinite"></div>
+    </div>`,
+    className:'', iconAnchor:[11,11]
+  });
+  if (marker) {
+    marker.setLatLng([lat, lon]);
+  } else {
+    marker = L.marker([lat, lon], {icon, zIndexOffset:2000})
+      .addTo(map)
+      .bindPopup('<div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:13px;color:#FF1744">🔴 Live Location</div>');
+  }
+  if (firstFix) {
+    map.setView([lat, lon], 16);
+    firstFix = false;
+  }
+  document.getElementById('coords-text').textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}
+
+async function poll() {
+  if (!token) {
+    document.getElementById('status-chip').textContent = 'Invalid link';
+    return;
+  }
+  try {
+    const r = await fetch(`${BACKEND}/live_location/${token}`);
+    if (!r.ok) { document.getElementById('status-chip').textContent = 'Location stopped'; return; }
+    const d = await r.json();
+    updateMarker(parseFloat(d.latitude), parseFloat(d.longitude));
+
+    // How old is the fix?
+    const updated = new Date(d.updated_at);
+    const ageS    = Math.round((Date.now() - updated.getTime()) / 1000);
+    const ageText = ageS < 60 ? `${ageS}s ago` : `${Math.floor(ageS/60)}m ago`;
+    document.getElementById('age-text').textContent = `Updated ${ageText}`;
+    document.getElementById('last-updated').textContent = ageText;
+
+    const chip = document.getElementById('status-chip');
+    if (ageS < 30) {
+      chip.className = 'chip-live'; chip.textContent = '🔴 LIVE';
+    } else {
+      chip.className = 'chip-stale'; chip.textContent = `Last seen ${ageText}`;
+    }
+  } catch(e) {
+    // Backend unreachable — try Supabase directly
+    try {
+      const { data: loc } = await sbLive
+        .from('live_locations')
+        .select('latitude,longitude,updated_at')
+        .eq('share_token', token)
+        .single();
+      if (!loc) { document.getElementById('status-chip').textContent = 'Location not found'; return; }
+      updateMarker(parseFloat(loc.latitude), parseFloat(loc.longitude));
+      const updated = new Date(loc.updated_at);
+      const ageS = Math.round((Date.now() - updated.getTime()) / 1000);
+      const ageText = ageS < 60 ? `${ageS}s ago` : `${Math.floor(ageS/60)}m ago`;
+      document.getElementById('age-text').textContent = `Updated ${ageText}`;
+      document.getElementById('last-updated').textContent = ageText;
+      const chip = document.getElementById('status-chip');
+      chip.className = ageS < 60 ? 'chip-live' : 'chip-stale';
+      chip.textContent = ageS < 60 ? '🔴 LIVE' : `Last seen ${ageText}`;
+    } catch(e2) {
+      document.getElementById('status-chip').className = 'chip-stale';
+      document.getElementById('status-chip').textContent = 'Location unavailable';
+    }
+  }
+}
+
+// Add ping animation CSS
+const style = document.createElement('style');
+style.textContent = `@keyframes ping{0%{transform:scale(1);opacity:.8}100%{transform:scale(2.5);opacity:0}}`;
+document.head.appendChild(style);
+
+if (!token) {
+  document.getElementById('info-card').innerHTML = '<div style="color:#FF1744;font-family:\'Syne\',sans-serif;font-weight:700">Invalid or expired share link.</div>';
+} else {
+  poll();
+  setInterval(poll, 10000);
+}
+</script>
+</body>
+</html>
